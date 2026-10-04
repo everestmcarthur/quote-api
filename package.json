@@ -1,0 +1,14 @@
+{
+  "name": "quote-api",
+  "version": "1.0.0",
+  "description": "High-performance makeitaquote microservice for Discord Quote plugin",
+  "main": "src/server.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "dev": "bun --watch src/server.ts"
+  },
+  "dependencies": {
+    "makeitaquote": "^12.1.2"
+  }
+}

@@ -1,0 +1,11 @@
+services:
+  quote-api:
+    build: .
+    container_name: quote-api
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+    volumes:
+      - ./cache:/app/cache
