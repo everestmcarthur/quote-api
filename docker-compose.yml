@@ -4,7 +4,7 @@ services:
     container_name: quote-api
     restart: unless-stopped
     ports:
-      - "8081:8081"
+      - "127.0.0.1:3100:8081"
     environment:
       - PORT=8081
     volumes:

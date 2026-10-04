@@ -27,7 +27,7 @@ docker compose up -d --build
 ### Caddy Reverse Proxy Example
 
 ```caddy
-quote.allyapp.cc {
-    reverse_proxy 127.0.0.1:8081
+quote.allyapp.cc, quote.is-your.app {
+    reverse_proxy 127.0.0.1:3100
 }
 ```
