@@ -9,7 +9,7 @@ if (!existsSync(CACHE_DIR)) {
   mkdirSync(CACHE_DIR, { recursive: true });
 }
 
-// In-memory image buffer cache for ultra-fast serving (up to 500 images)
+// In-memory image buffer cache for fast serving (up to 500 images)
 const imageCache = new Map<string, { buffer: Buffer; mime: string; created: number }>();
 const MAX_CACHE_SIZE = 500;
 const CACHE_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -45,6 +45,11 @@ interface QuotePayload {
   gif?: boolean;
   watermark?: string;
   raw?: boolean;
+  quoteMarks?: boolean;
+  fontStyle?: "sans" | "serif" | "mono" | string;
+  font?: string;
+  roleColor?: number | string;
+  timestamp?: string;
 }
 
 const server = Bun.serve({
@@ -58,13 +63,16 @@ const server = Bun.serve({
 
     // Health check
     if (url.pathname === "/health") {
-      return Response.json({
-        status: "ok",
-        service: "quote-api",
-        engine: "makeitaquote",
-        version: "12.1.2",
-        cachedImages: imageCache.size,
-      }, { headers: corsHeaders });
+      return Response.json(
+        {
+          status: "ok",
+          service: "quote-api",
+          engine: "makeitaquote",
+          version: "12.1.2",
+          cachedImages: imageCache.size,
+        },
+        { headers: corsHeaders },
+      );
     }
 
     // Serve cached image
@@ -106,11 +114,13 @@ const server = Bun.serve({
         const body = (await req.json().catch(() => ({}))) as QuotePayload;
         const text = body.text || "...";
         const avatar = body.avatar || "https://cdn.discordapp.com/embed/avatars/0.png";
-        const username = body.username || "User";
-        const displayName = body.display_name || body.displayName || username;
+        const baseUsername = body.username || "User";
+        const timestamp = body.timestamp && typeof body.timestamp === "string" ? body.timestamp.trim() : "";
+        const username = timestamp ? `${baseUsername}  •  ${timestamp}` : baseUsername;
+        const displayName = body.display_name || body.displayName || baseUsername;
 
         const miq = new MiQ()
-          .setText(text)
+          .setText(text, { markdown: "discord" })
           .setAvatar(avatar)
           .setUsername(username)
           .setDisplayName(displayName);
@@ -123,15 +133,54 @@ const server = Bun.serve({
         const isFlip = Boolean(body.flip);
         const isNew = Boolean(body.new || body.layout === "new");
         const isColor = Boolean(body.color);
+        const isBold = Boolean(body.bold);
+        const quoteMarks = body.quoteMarks !== false;
 
-        miq.setTheme({
+        // Resolve font style
+        const fontStyle = (body.fontStyle || body.font || "sans").toLowerCase();
+        let resolvedFont = "Noto Sans JP";
+        if (fontStyle === "serif") {
+          resolvedFont = "Zen Old Mincho";
+        } else if (fontStyle === "mono" || fontStyle === "monospace") {
+          resolvedFont = "Inconsolata";
+        } else if (fontStyle === "mplus") {
+          resolvedFont = "M PLUS Rounded 1c";
+        } else if (fontStyle) {
+          resolvedFont = fontStyle;
+        }
+
+        // Resolve role color if provided
+        let roleColorCss: string | undefined;
+        if (typeof body.roleColor === "number" && body.roleColor !== 0) {
+          const hex = (body.roleColor & 0x00ffffff).toString(16).padStart(6, "0");
+          roleColorCss = `#${hex}`;
+        } else if (typeof body.roleColor === "string" && body.roleColor.trim()) {
+          roleColorCss = body.roleColor.startsWith("#") ? body.roleColor : `#${body.roleColor}`;
+        }
+
+        const themeConfig: any = {
           extends: isLight ? "light" : "dark",
           layout: isNew ? "new" : "side",
           avatar: {
             position: isFlip ? "right" : "left",
             grayscale: !isColor,
           },
-        });
+          quoteMark: {
+            display: quoteMarks ? "block" : "none",
+          },
+          text: {
+            weight: isBold ? "bold" : "normal",
+            font: resolvedFont,
+          },
+        };
+
+        if (roleColorCss) {
+          themeConfig.displayName = {
+            color: roleColorCss,
+          };
+        }
+
+        miq.setTheme(themeConfig);
 
         const format = body.gif ? "gif" : "png";
         const mime = body.gif ? "image/gif" : "image/png";
@@ -161,7 +210,9 @@ const server = Bun.serve({
 
         // Determine host header or configured public URL
         const host = req.headers.get("host") || `127.0.0.1:${PORT}`;
-        const proto = req.headers.get("x-forwarded-proto") || (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+        const proto =
+          req.headers.get("x-forwarded-proto") ||
+          (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
         const imageUrl = `${proto}://${host}/image/${filename}`;
 
         return Response.json(
